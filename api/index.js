@@ -73,6 +73,8 @@ export default async function handler(req, res) {
   const q = req.query || {};
   const action = String(q.action || "").toLowerCase();
   const date = q.date;
+  const from = q.from;
+  const to = q.to;
   const timezone = typeof q.timezone === "string" && /^[A-Za-z_]+(?:\/[A-Za-z_+-]+)*$/.test(q.timezone) ? q.timezone : "Africa/Lagos";
   const fixtureId = positiveInt(q.id || q.fixture);
   const league = positiveInt(q.league);
@@ -84,14 +86,28 @@ export default async function handler(req, res) {
       case "live":
         data = await fetchFootball("fixtures", { live: q.league ? undefined : "all", league, timezone });
         break;
-      case "fixtures":
+      case "fixtures": {
         if (date && !validDate(date)) return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
-        data = await fetchFootball("fixtures", { date: date || new Date().toISOString().slice(0, 10), league, season, timezone });
+        if (from && !validDate(from)) return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD." });
+        if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
+        if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
+        const params = from || to
+          ? { from: from || to, to: to || from, league, season, timezone }
+          : { date: date || new Date().toISOString().slice(0, 10), league, season, timezone };
+        data = await fetchFootball("fixtures", params);
         break;
-      case "results":
+      }
+      case "results": {
         if (date && !validDate(date)) return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
-        data = await fetchFootball("fixtures", { date: date || new Date().toISOString().slice(0, 10), league, season, status: "FT-AET-PEN", timezone });
+        if (from && !validDate(from)) return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD." });
+        if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
+        if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
+        const params = from || to
+          ? { from: from || to, to: to || from, league, season, status: "FT-AET-PEN", timezone }
+          : { date: date || new Date().toISOString().slice(0, 10), league, season, status: "FT-AET-PEN", timezone };
+        data = await fetchFootball("fixtures", params);
         break;
+      }
       case "standings":
         if (!league || !season) return res.status(400).json({ error: "League and season are required positive integers." });
         data = await fetchFootball("standings", { league, season });
@@ -170,4 +186,4 @@ export default async function handler(req, res) {
       hint: status === 503 ? "Configure API_FOOTBALL_KEY in Vercel." : status === 502 ? "Check API-Football account status, key permissions, and plan coverage." : undefined
     });
   }
-}
+          }
