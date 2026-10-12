@@ -86,26 +86,67 @@ export default async function handler(req, res) {
       case "live":
         data = await fetchFootball("fixtures", { live: q.league ? undefined : "all", league, timezone });
         break;
-      case "fixtures": {
-        if (date && !validDate(date)) return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
-        if (from && !validDate(from)) return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD." });
-        if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
-        if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
-        const params = from || to
-          ? { from: from || to, to: to || from, timezone, league, season }
-          : { date: date || new Date().toISOString().slice(0, 10), league, season, timezone };
-        data = await fetchFootball("fixtures", params);
-        break;
-      }
+      case "fixtures":
       case "results": {
-        if (date && !validDate(date)) return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
-        if (from && !validDate(from)) return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD." });
-        if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
-        if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
-        const params = from || to
-          ? { from: from || to, to: to || from, timezone, league, season, status: "FT-AET-PEN" }
-          : { date: date || new Date().toISOString().slice(0, 10), league, season, status: "FT-AET-PEN", timezone };
-        data = await fetchFootball("fixtures", params);
+        const isResults = action === "results";
+
+        if (date && !validDate(date)) {
+          return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
+        }
+        if (from && !validDate(from)) {
+          return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD." });
+        }
+        if (to && !validDate(to)) {
+          return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
+        }
+        if (from && to && from > to) {
+          return res.status(400).json({ error: "The from date must be on or before the to date." });
+        }
+
+        // Use individual date requests instead of API-Football's from/to range
+        // parameters, which are currently being rejected by the provider.
+        const startDate = from || to || date || new Date().toISOString().slice(0, 10);
+        const endDate = (from || to) ? (to || from) : startDate;
+        const startTime = new Date(`${startDate}T00:00:00Z`).getTime();
+        const endTime = new Date(`${endDate}T00:00:00Z`).getTime();
+        const dayCount = Math.floor((endTime - startTime) / 86400000) + 1;
+
+        if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || dayCount < 1) {
+          return res.status(400).json({ error: "Invalid date range." });
+        }
+        if (dayCount > 8) {
+          return res.status(400).json({ error: "Request a maximum of 8 calendar days at a time." });
+        }
+
+        const allFixtures = [];
+        for (let i = 0; i < dayCount; i++) {
+          const day = new Date(startTime + i * 86400000).toISOString().slice(0, 10);
+          const params = { date: day, timezone, league, season };
+          if (isResults) params.status = "FT-AET-PEN";
+
+          const dayData = await fetchFootball("fixtures", params);
+          const fixtures = Array.isArray(dayData?.response) ? dayData.response : [];
+          allFixtures.push(...fixtures);
+        }
+
+        const uniqueFixtures = Array.from(
+          new Map(allFixtures.map(item => [item?.fixture?.id, item])).values()
+        ).filter(item => item?.fixture?.id);
+
+        data = {
+          get: "fixtures",
+          parameters: {
+            from: startDate,
+            to: endDate,
+            timezone,
+            league: league || null,
+            season: season || null,
+            ...(isResults ? { status: "FT-AET-PEN" } : {})
+          },
+          results: uniqueFixtures.length,
+          paging: { current: 1, total: 1 },
+          response: uniqueFixtures
+        };
         break;
       }
       case "standings":
@@ -186,4 +227,4 @@ export default async function handler(req, res) {
       hint: status === 503 ? "Configure API_FOOTBALL_KEY in Vercel." : status === 502 ? "Check API-Football account status, key permissions, and plan coverage." : undefined
     });
   }
-}
+            }
