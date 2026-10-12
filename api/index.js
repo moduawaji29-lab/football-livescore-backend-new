@@ -92,7 +92,7 @@ export default async function handler(req, res) {
         if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
         if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
         const params = from || to
-          ? { from: from || to, to: to || from, league, season, timezone }
+          ? { from: from || to, to: to || from, timezone, league, season }
           : { date: date || new Date().toISOString().slice(0, 10), league, season, timezone };
         data = await fetchFootball("fixtures", params);
         break;
@@ -103,7 +103,7 @@ export default async function handler(req, res) {
         if (to && !validDate(to)) return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD." });
         if (from && to && from > to) return res.status(400).json({ error: "The from date must be on or before the to date." });
         const params = from || to
-          ? { from: from || to, to: to || from, league, season, status: "FT-AET-PEN", timezone }
+          ? { from: from || to, to: to || from, timezone, league, season, status: "FT-AET-PEN" }
           : { date: date || new Date().toISOString().slice(0, 10), league, season, status: "FT-AET-PEN", timezone };
         data = await fetchFootball("fixtures", params);
         break;
@@ -186,4 +186,4 @@ export default async function handler(req, res) {
       hint: status === 503 ? "Configure API_FOOTBALL_KEY in Vercel." : status === 502 ? "Check API-Football account status, key permissions, and plan coverage." : undefined
     });
   }
-          }
+}
