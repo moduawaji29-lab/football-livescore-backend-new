@@ -1,8 +1,18 @@
 const API_BASE = "https://v3.football.api-sports.io";
 const SCOREBAT_BASE = "https://www.scorebat.com/video-api/v3/";
 
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function setCors(req, res) {
+  // CORS only controls browser access; it is not authentication or rate limiting.
+  // Set ALLOWED_ORIGINS in Vercel as a comma-separated list if the app uses a
+  // custom domain. The GitHub Pages origin below matches the known frontend.
+  const defaults = ["https://moduawaji29-lab.github.io"];
+  const configured = String(process.env.ALLOWED_ORIGINS || "").split(",").map(v => v.trim()).filter(Boolean);
+  const allowed = new Set([...defaults, ...configured]);
+  const origin = typeof req.headers?.origin === "string" ? req.headers.origin : "";
+  if (origin && allowed.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -49,6 +59,11 @@ async function fetchFootball(path, params) {
     const error = new Error(message);
     error.status = response.status === 401 || response.status === 403 ? 502 : response.status;
     error.providerStatus = response.status;
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      error.retryAfter = retryAfter && /^\d+$/.test(retryAfter) ? retryAfter : "30";
+      error.message = "Football data provider rate limit reached. Please wait before refreshing.";
+    }
     throw error;
   }
   // API-Football may return HTTP 200 while reporting account/key errors in `errors`.
@@ -63,8 +78,14 @@ async function fetchFootball(path, params) {
 }
 
 export default async function handler(req, res) {
-  setCors(res);
-  if (req.method === "OPTIONS") return res.status(204).end();
+  setCors(req, res);
+  if (req.method === "OPTIONS") {
+    const origin = typeof req.headers?.origin === "string" ? req.headers.origin : "";
+    const configured = String(process.env.ALLOWED_ORIGINS || "").split(",").map(v => v.trim()).filter(Boolean);
+    const allowed = new Set(["https://moduawaji29-lab.github.io", ...configured]);
+    if (origin && !allowed.has(origin)) return res.status(403).end();
+    return res.status(204).end();
+  }
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET, OPTIONS");
     return res.status(405).json({ error: "Method not allowed. Use GET." });
@@ -216,10 +237,12 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("Football API error:", { action, message: error.message, providerStatus: error.providerStatus });
     const status = Number.isInteger(error.status) ? error.status : 502;
+    res.setHeader("Cache-Control", "no-store");
+    if (error.retryAfter) res.setHeader("Retry-After", error.retryAfter);
     return res.status(status).json({
       error: error.message || "Unable to fetch football data.",
       action,
-      hint: status === 503 ? "Configure API_FOOTBALL_KEY in Vercel." : status === 502 ? "Check API-Football account status, key permissions, and plan coverage." : undefined
+      hint: status === 503 ? "Configure API_FOOTBALL_KEY in Vercel Environment Variables." : status === 502 ? "Check API-Football account status, key permissions, and plan coverage." : status === 429 ? "Wait for the provider quota window to reset before retrying." : undefined
     });
   }
-  }
+}
